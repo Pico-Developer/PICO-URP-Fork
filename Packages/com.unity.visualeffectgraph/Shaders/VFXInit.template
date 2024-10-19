@@ -1,0 +1,190 @@
+#pragma kernel CSMain
+${VFXPragmaOnlyRenderers}
+${VFXPragmaRequire}
+
+${VFXGlobalInclude}
+${VFXGlobalDeclaration}
+${VFXInclude("Shaders/VFXParticleCommon.template")}
+
+#define USE_DEAD_LIST (VFX_USE_ALIVE_CURRENT && !HAS_STRIPS)
+
+#define USE_PREFIX_SUM_SPAWNCOUNT ((VFX_STATIC_SOURCE_COUNT > 1) || (VFX_USE_DYNAMIC_SOURCE_COUNT) || VFX_USE_INSTANCING)
+
+RWByteAddressBuffer attributeBuffer;
+ByteAddressBuffer sourceAttributeBuffer;
+#if USE_PREFIX_SUM_SPAWNCOUNT
+StructuredBuffer<uint> spawnCountPrefixSum;
+#endif
+
+#if !VFX_USE_SPAWNER_FROM_GPU
+    struct InitParams
+    {
+        uint spawnIndex;
+        uint3 _pad;
+    };
+
+    StructuredBuffer<uint> eventCountPrefixSum;
+    StructuredBuffer<InitParams> batchedInitParams;
+#endif
+
+CBUFFER_START(initParamsConst)
+    uint dispatchWidth;
+    ${VFXInstancingConstants}
+CBUFFER_END
+
+#if USE_DEAD_LIST
+RWStructuredBuffer<uint> deadListIn;
+RWStructuredBuffer<uint> deadListCount;
+StructuredBuffer<uint> deadListCountCopy;
+#endif
+
+#if VFX_USE_SPAWNER_FROM_GPU
+StructuredBuffer<uint> eventList;
+#endif
+
+#if HAS_STRIPS
+RWStructuredBuffer<uint> stripDataBuffer;
+#endif
+
+${VFXPerPassInclude}
+
+${VFXGeneratedBlockFunction}
+
+// Due to a bug in HLSL compiler, disable spurious "unitialized variable" due to mid function return statement
+#pragma warning(push)
+#pragma warning(disable : 4000)
+#if HAS_STRIPS
+bool GetParticleIndex(inout uint particleIndex, uint stripIndex, uint instanceIndex, uint stripCountPerInstance )
+{
+	uint relativeIndex;
+    uint bufferIndex = (instanceIndex * stripCountPerInstance) + stripIndex;
+
+	InterlockedAdd(STRIP_DATA(STRIP_NEXT_INDEX, bufferIndex), 1, relativeIndex);
+	if (relativeIndex >= PARTICLE_PER_STRIP_COUNT) // strip is full
+	{
+		InterlockedAdd(STRIP_DATA(STRIP_NEXT_INDEX, bufferIndex), -1); // Remove previous increment
+		return false;
+	}
+
+	particleIndex = stripIndex * PARTICLE_PER_STRIP_COUNT + ((STRIP_DATA(STRIP_FIRST_INDEX, bufferIndex) + relativeIndex) % PARTICLE_PER_STRIP_COUNT);
+    return true;
+}
+#endif
+#pragma warning(pop)
+
+[numthreads(NB_THREADS_PER_GROUP,1,1)]
+void CSMain(uint3 groupId          : SV_GroupID,
+            uint3 groupThreadId    : SV_GroupThreadID)
+{
+    uint id = groupThreadId.x + groupId.x * NB_THREADS_PER_GROUP;
+#if !VFX_USE_SPAWNER_FROM_GPU
+    id += groupId.y * dispatchWidth * NB_THREADS_PER_GROUP;
+#endif
+    ${VFXInitInstancingCompute}
+
+	ContextData contextData = instancingContextData[instanceActiveIndex];
+	uint systemSeed = contextData.systemSeed;
+
+    ${VFXLoadGraphValues}
+
+#if VFX_USE_SPAWNER_FROM_GPU
+    uint elementCount = eventList[VFXGetEventListBufferElementCount(instanceActiveIndex)];
+    uint totalAccumulatedElementCount = eventList[VFXGetEventListBufferAccumulatedCount(instanceActiveIndex)];
+    uint maxThreadId = min(contextData.maxParticleCount, elementCount);
+    uint currentSpawnIndex = totalAccumulatedElementCount - elementCount;
+#else
+    InitParams initParams = batchedInitParams[instanceActiveIndex];
+
+    uint nbEvents = eventCountPrefixSum[instanceActiveIndex];
+    [branch]
+    if (instanceActiveIndex > 0u)
+    {
+        nbEvents -= eventCountPrefixSum[instanceActiveIndex - 1];
+    }
+
+    uint maxThreadId = instancingPrefixSum[instanceCurrentIndex];
+    [branch]
+    if (instanceCurrentIndex > instancingCurrentOffset)
+    {
+        maxThreadId -= instancingPrefixSum[instanceCurrentIndex - 1];
+    }
+
+    uint currentSpawnIndex = initParams.spawnIndex;
+#endif
+
+#if USE_DEAD_LIST
+    maxThreadId = min(maxThreadId, deadListCountCopy[instanceIndex]);
+#endif
+
+    if (index < maxThreadId)
+    {
+#if VFX_USE_SPAWNER_FROM_GPU
+        int sourceIndex = eventList[VFXGetEventListBufferIndex(id, instanceActiveIndex)];
+#endif
+
+        uint startEventIndex = 0u; //tmp for GPU Events
+#if !VFX_USE_SPAWNER_FROM_GPU
+        int sourceIndex = 0;
+
+        startEventIndex = 0u;
+        [branch]
+        if (instanceActiveIndex > 0u)
+        {
+            startEventIndex = eventCountPrefixSum[instanceActiveIndex - 1];
+        }
+        #if USE_PREFIX_SUM_SPAWNCOUNT
+            sourceIndex = BinarySearchPrefixSum(index, spawnCountPrefixSum, startEventIndex, startEventIndex + nbEvents) - startEventIndex;
+        #endif
+
+#endif
+
+		VFXAttributes attributes = (VFXAttributes)0;
+		VFXSourceAttributes sourceAttributes = (VFXSourceAttributes)0;
+
+        ${VFXLoadAttributes}
+
+		uint particleIndex = index + currentSpawnIndex;
+#if VFX_USE_PARTICLEID_CURRENT
+         attributes.particleId = particleIndex;
+#endif
+#if VFX_USE_SEED_CURRENT
+        attributes.seed = WangHash(particleIndex ^ systemSeed);
+#endif
+#if VFX_USE_SPAWNINDEX_CURRENT
+        attributes.spawnIndex = id;
+#endif
+#if HAS_STRIPS
+#if !VFX_USE_SPAWNER_FROM_GPU
+		${VFXLoadParameter:{stripIndex}}
+#else
+        uint stripIndex = sourceIndex;
+#endif
+		stripIndex = min(stripIndex, STRIP_COUNT);
+
+        if (!GetParticleIndex(particleIndex, stripIndex, instanceIndex, STRIP_COUNT))
+            return;
+
+        const StripData stripData = GetStripDataFromStripIndex(stripIndex, instanceIndex);
+		InitStripAttributesWithSpawn(maxThreadId, particleIndex, attributes, stripData);
+		// TODO Change seed to be sure we're deterministic on random with strip
+#endif
+
+        ${VFXProcessBlocks}
+
+#if VFX_USE_ALIVE_CURRENT
+        if (attributes.alive)
+#endif
+        {
+#if USE_DEAD_LIST
+            uint deadIndex;
+            InterlockedAdd(deadListCount[instanceIndex], -1, deadIndex);
+            deadIndex -= 1;
+            deadIndex += instanceIndex * RAW_CAPACITY;
+            uint index = deadListIn[deadIndex];
+#else
+            uint index = particleIndex;
+#endif
+            ${VFXStoreAttributes}
+        }
+    }
+}
