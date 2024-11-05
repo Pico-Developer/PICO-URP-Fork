@@ -170,7 +170,7 @@ ShadowSamplingData GetAdditionalLightShadowSamplingData(int index)
         // shadowmapSize is used in SampleShadowmapFiltered otherwise.
         shadowSamplingData.shadowmapSize = _AdditionalShadowmapSize;
         shadowSamplingData.softShadowQuality = _AdditionalShadowParams[index].y;
-        shadowSamplingData.softShadowMethod = _AdditionalShadowMethod;
+        shadowSamplingData.softShadowMethod = _AdditionalShadowMethod[index];
     #endif
 
     return shadowSamplingData;
