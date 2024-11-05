@@ -23,6 +23,7 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
         public static FieldDescriptor NormalDropOffTS = new FieldDescriptor(string.Empty, "NormalDropOffTS", "_NORMAL_DROPOFF_TS 1");
         public static FieldDescriptor NormalDropOffOS = new FieldDescriptor(string.Empty, "NormalDropOffOS", "_NORMAL_DROPOFF_OS 1");
         public static FieldDescriptor NormalDropOffWS = new FieldDescriptor(string.Empty, "NormalDropOffWS", "_NORMAL_DROPOFF_WS 1");
+        public static FieldDescriptor Multiview = new FieldDescriptor(string.Empty, "Multiview", "UNITY_STEREO_MULTIVIEW_ENABLED");
         #endregion
 
         // A predicate is field that has a matching template command, for example: $<name> <content>

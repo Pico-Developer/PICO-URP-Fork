@@ -48,7 +48,7 @@ namespace UnityEditor.Rendering.Universal
             };
 
             public static GUIContent SoftShadowQuality = EditorGUIUtility.TrTextContent("Soft Shadows Quality", "Controls the filtering quality of soft shadows. Higher quality has lower performance.");
-
+            public static GUIContent SoftShadowMethod = EditorGUIUtility.TrTextContent("Soft Shadows Method", "Controls the filtering method of soft shadows.");
             // Bias (default or custom)
             public static GUIContent shadowBias = EditorGUIUtility.TrTextContent("Bias", "Select if the Bias should use the settings from the Pipeline Asset or Custom settings.");
             public static int[] optionDefaultValues = { 0, 1 };

@@ -132,12 +132,34 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
             }
         }
         #endregion
+        #region RequiredFields
+        static class UnlitRequiredFields
+        {
+            public static readonly FieldCollection Forward = new FieldCollection()
+            { 
+            };
 
+            public static readonly FieldCollection ForwardMultiivew = new FieldCollection()
+            {
+                BuiltInFields.Multiview,
+            };
+        }
+        #endregion
         #region Pass
         static class UnlitPasses
         {
             public static PassDescriptor Unlit(BuiltInTarget target)
             {
+                FieldCollection fieldCollection;
+                if (target.renderFeature == RenderFeature.Multiview)
+                {
+                    fieldCollection = UnlitRequiredFields.ForwardMultiivew;
+                }
+                else
+                {
+                    fieldCollection = UnlitRequiredFields.Forward;
+                }
+
                 var result = new PassDescriptor
                 {
                     // Definition
@@ -156,6 +178,7 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
 
                     // Fields
                     structs = CoreStructCollections.Default,
+                    requiredFields = fieldCollection,
                     fieldDependencies = CoreFieldDependencies.Default,
 
                     // Conditional State

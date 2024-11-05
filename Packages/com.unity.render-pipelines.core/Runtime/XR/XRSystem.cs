@@ -136,10 +136,12 @@ namespace UnityEngine.Experimental.Rendering
         public static void SetRenderScale(float renderScale)
         {
 #if ENABLE_VR && ENABLE_XR_MODULE
+#if !UNITY_ANDROID //On Android, XR Runtime controls the scale of render target automatically
             SubsystemManager.GetInstances(s_DisplayList);
 
             foreach (var display in s_DisplayList)
                 display.scaleOfAllRenderTargets = renderScale;
+#endif
 #endif
         }
 

@@ -217,6 +217,18 @@ namespace UnityEngine.Rendering.Universal
         }
         [SerializeField] private SoftShadowQuality m_SoftShadowQuality = SoftShadowQuality.UsePipelineSettings;
 
+
+        /// <summary>
+        /// Light soft shadow filtering quality.
+        /// </summary>
+        [Tooltip("Controls the filtering method of soft shadows.")]
+        public SoftShadowMethod softShadowMethod
+        {
+            get => m_SoftShadowMethod;
+            set => m_SoftShadowMethod = value;
+        }
+        [SerializeField] private SoftShadowMethod m_SoftShadowMethod = SoftShadowMethod.UsePipelineSettings;
+
         /// <inheritdoc/>
         public void OnBeforeSerialize()
         {

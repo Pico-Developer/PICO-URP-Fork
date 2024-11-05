@@ -49,6 +49,14 @@ namespace UnityEngine.Rendering.Universal
         /// </summary>
         Low,
         /// <summary>
+        /// Medium quality soft shadows. 5 samples poisson filtering.
+        /// </summary>
+        Medium_Poisson5,
+        /// <summary>
+        /// Medium quality soft shadows. 6 samples poisson filtering.
+        /// </summary>
+        Medium_Poisson6,
+        /// <summary>
         /// Medium quality soft shadows. The default. 5x5 tent filtering.
         /// </summary>
         Medium,
@@ -58,6 +66,17 @@ namespace UnityEngine.Rendering.Universal
         High,
     }
 
+    /// <summary>
+    /// Method of soft shadows. 
+    /// </summary>
+    public enum SoftShadowMethod
+    {
+        [InspectorName("Use settings from Render Pipeline Asset")]
+        UsePipelineSettings,
+
+        Original,
+        PoissonDisk
+    }
     /// <summary>
     /// This controls the size of the shadow map texture.
     /// </summary>
@@ -507,6 +526,8 @@ namespace UnityEngine.Rendering.Universal
         [SerializeField] bool m_ConservativeEnclosingSphere = false;
         [SerializeField] int m_NumIterationsEnclosingSphere = 64;
         [SerializeField] SoftShadowQuality m_SoftShadowQuality = SoftShadowQuality.Medium;
+        [SerializeField] SoftShadowMethod m_SoftShadowMethod = SoftShadowMethod.Original;
+
 
         // Light Cookie Settings
         [SerializeField] LightCookieResolution m_AdditionalLightsCookieResolution = LightCookieResolution._2048;
@@ -1374,6 +1395,12 @@ namespace UnityEngine.Rendering.Universal
         {
             get { return m_SoftShadowQuality; }
             set { m_SoftShadowQuality = value; }
+        }
+
+        internal SoftShadowMethod softShadowMethod
+        {
+            get { return m_SoftShadowMethod; }
+            set { m_SoftShadowMethod = value; }
         }
 
         /// <summary>

@@ -223,6 +223,16 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
         {
             public static PassDescriptor Forward(BuiltInTarget target)
             {
+                FieldCollection fieldCollection;
+                if(target.renderFeature == RenderFeature.Multiview)
+                {
+                    fieldCollection = LitRequiredFields.ForwardMultiivew;
+                }
+                else
+                {
+                    fieldCollection = LitRequiredFields.Forward;
+                }
+
                 var result = new PassDescriptor()
                 {
                     // Definition
@@ -241,7 +251,7 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
 
                     // Fields
                     structs = CoreStructCollections.Default,
-                    requiredFields = LitRequiredFields.Forward,
+                    requiredFields = fieldCollection,
                     fieldDependencies = CoreFieldDependencies.Default,
 
                     // Conditional State
@@ -478,6 +488,19 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
         {
             public static readonly FieldCollection Forward = new FieldCollection()
             {
+                StructFields.Attributes.uv1,                            // needed for meta vertex position
+                StructFields.Varyings.positionWS,
+                StructFields.Varyings.normalWS,
+                StructFields.Varyings.tangentWS,                        // needed for vertex lighting
+                BuiltInStructFields.Varyings.lightmapUV,
+                BuiltInStructFields.Varyings.sh,
+                BuiltInStructFields.Varyings.fogFactorAndVertexLight, // fog and vertex lighting, vert input is dependency
+                BuiltInStructFields.Varyings.shadowCoord,             // shadow coord, vert input is dependency
+            };
+
+            public static readonly FieldCollection ForwardMultiivew = new FieldCollection()
+            {
+                BuiltInFields.Multiview,
                 StructFields.Attributes.uv1,                            // needed for meta vertex position
                 StructFields.Varyings.positionWS,
                 StructFields.Varyings.normalWS,

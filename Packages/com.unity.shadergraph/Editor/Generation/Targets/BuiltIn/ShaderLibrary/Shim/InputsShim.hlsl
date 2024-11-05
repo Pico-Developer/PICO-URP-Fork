@@ -8,6 +8,17 @@
 // Use the include guard to force UnityInput.hlsl to not get included
 #define BUILTIN_SHADER_VARIABLES_INCLUDED
 
+#if defined (UNITY_STEREO_MULTIVIEW_ENABLED)
+#define UNITY_DECLARE_MULTIVIEW(number_of_views) CBUFFER_START(OVR_multiview) uint gl_ViewID; uint numViews_##number_of_views; CBUFFER_END
+#define UNITY_VIEWID gl_ViewID
+#endif
+
+#if defined (GLOBAL_CBUFFER_START)
+#undef GLOBAL_CBUFFER_START
+#define GLOBAL_CBUFFER_START(name)    cbuffer name {
+#define GLOBAL_CBUFFER_END            }
+#endif
+
 #include "UnityShaderVariables.cginc"
 
 // scaleBias.x = flipSign

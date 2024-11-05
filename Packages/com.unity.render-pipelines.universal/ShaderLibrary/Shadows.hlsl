@@ -71,6 +71,7 @@ float4      _CascadeShadowSplitSphereRadii;
 float4      _MainLightShadowOffset0; // xy: offset0, zw: offset1
 float4      _MainLightShadowOffset1; // xy: offset2, zw: offset3
 float4      _MainLightShadowParams;   // (x: shadowStrength, y: >= 1.0 if soft shadows, 0.0 otherwise, z: main light fade scale, w: main light fade bias)
+half      _MainLightShadowMethod;
 float4      _MainLightShadowmapSize;  // (xy: 1/width and 1/height, zw: width and height)
 
 float4      _AdditionalShadowOffset0; // xy: offset0, zw: offset1
@@ -85,6 +86,7 @@ float4      _AdditionalShadowmapSize; // (xy: 1/width and 1/height, zw: width an
 // AdditionalLightShadows stays reasonable. It also avoids shader compilation errors on SHADER_API_GLES30
 // devices where max number of uniforms per shader GL_MAX_FRAGMENT_UNIFORM_VECTORS is low (224)
 float4      _AdditionalShadowParams[MAX_VISIBLE_LIGHTS];         // Per-light data
+half _AdditionalShadowMethod[MAX_VISIBLE_LIGHTS];
 float4x4    _AdditionalLightsWorldToShadow[MAX_VISIBLE_LIGHTS];  // Per-shadow-slice-data
 #endif
 #endif
@@ -102,13 +104,35 @@ CBUFFER_END
 
 float4 _ShadowBias; // x: depth bias, y: normal bias
 
+static const half3 poisson_disk5[] = {
+    half3(-0.00014484257582653067, 0.0012192407124984035, 0),
+    half3(0.0011108841308236995, 0.0009385648423248624, 0),
+    half3(0.0004800029173152869, -0.00018056960628274015, 0),
+    half3(-0.0010589158648778791, 0.0003128334265417366, 0),
+    half3(-0.0001749486284937418, -0.0012883833794601934, 0)
+};
+
+static const half3 poisson_disk6[] = {
+    half3(-0.001398776778092394, -8.527431513704086e-05, 0),
+    half3(-0.00016106780815556495, 0.0002568869112811221, 0),
+    half3(0.0010944939447127778, -0.0005143942923003966, 0),
+    half3(-0.001100991206352049, 0.0011648049202734063, 0),
+    half3(0.0008507113013948286, 0.0010506337475411092, 0),
+    half3(-0.00047444786415287034, -0.0009899830221478035, 0)
+};
+
 #define BEYOND_SHADOW_FAR(shadowCoord) shadowCoord.z <= 0.0 || shadowCoord.z >= 1.0
 
 // Should match: UnityEngine.Rendering.Universal + 1
 #define SOFT_SHADOW_QUALITY_OFF    half(0.0)
 #define SOFT_SHADOW_QUALITY_LOW    half(1.0)
-#define SOFT_SHADOW_QUALITY_MEDIUM half(2.0)
-#define SOFT_SHADOW_QUALITY_HIGH   half(3.0)
+#define SOFT_SHADOW_QUALITY_MEDIUM_5 half(2.0)
+#define SOFT_SHADOW_QUALITY_MEDIUM_6 half(3.0)
+#define SOFT_SHADOW_QUALITY_MEDIUM half(4.0)
+#define SOFT_SHADOW_QUALITY_HIGH   half(5.0)
+
+#define SOFT_SHADOW_METHOD_ORIGINAL half(1.0)
+#define SOFT_SHADOW_METHOD_POISSON half(2.0)
 
 struct ShadowSamplingData
 {
@@ -116,6 +140,7 @@ struct ShadowSamplingData
     half4 shadowOffset1;
     float4 shadowmapSize;
     half softShadowQuality;
+    half softShadowMethod;
 };
 
 ShadowSamplingData GetMainLightShadowSamplingData()
@@ -129,7 +154,7 @@ ShadowSamplingData GetMainLightShadowSamplingData()
     // shadowmapSize is used in SampleShadowmapFiltered otherwise
     shadowSamplingData.shadowmapSize = _MainLightShadowmapSize;
     shadowSamplingData.softShadowQuality = _MainLightShadowParams.y;
-
+    shadowSamplingData.softShadowMethod = _MainLightShadowMethod;
     return shadowSamplingData;
 }
 
@@ -145,6 +170,7 @@ ShadowSamplingData GetAdditionalLightShadowSamplingData(int index)
         // shadowmapSize is used in SampleShadowmapFiltered otherwise.
         shadowSamplingData.shadowmapSize = _AdditionalShadowmapSize;
         shadowSamplingData.softShadowQuality = _AdditionalShadowParams[index].y;
+        shadowSamplingData.softShadowMethod = _AdditionalShadowMethod;
     #endif
 
     return shadowSamplingData;
@@ -197,34 +223,90 @@ half SampleScreenSpaceShadowmap(float4 shadowCoord)
 real SampleShadowmapFiltered(TEXTURE2D_SHADOW_PARAM(ShadowMap, sampler_ShadowMap), float4 shadowCoord, ShadowSamplingData samplingData)
 {
     real attenuation = real(1.0);
-
-    if (samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_LOW)
+    if (samplingData.softShadowMethod == SOFT_SHADOW_METHOD_ORIGINAL)
     {
-        // 4-tap hardware comparison
-        real4 attenuation4;
-        attenuation4.x = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset0.xy, 0)));
-        attenuation4.y = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset0.zw, 0)));
-        attenuation4.z = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset1.xy, 0)));
-        attenuation4.w = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset1.zw, 0)));
-        attenuation = dot(attenuation4, real(0.25));
-    }
-    else if(samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_MEDIUM)
-    {
-        real fetchesWeights[9];
-        real2 fetchesUV[9];
-        SampleShadow_ComputeSamples_Tent_5x5(samplingData.shadowmapSize, shadowCoord.xy, fetchesWeights, fetchesUV);
+        if (samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_LOW)
+        {
+            // 4-tap hardware comparison
+            real4 attenuation4;
+            attenuation4.x = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset0.xy, 0)));
+            attenuation4.y = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset0.zw, 0)));
+            attenuation4.z = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset1.xy, 0)));
+            attenuation4.w = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + float3(samplingData.shadowOffset1.zw, 0)));
+            attenuation = dot(attenuation4, real(0.25));
+        }
+        else if (samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_MEDIUM)
+        {
+            real fetchesWeights[9];
+            real2 fetchesUV[9];
+            SampleShadow_ComputeSamples_Tent_5x5(samplingData.shadowmapSize, shadowCoord.xy, fetchesWeights, fetchesUV);
 
-        attenuation = fetchesWeights[0] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[0].xy, shadowCoord.z))
-                    + fetchesWeights[1] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[1].xy, shadowCoord.z))
-                    + fetchesWeights[2] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[2].xy, shadowCoord.z))
-                    + fetchesWeights[3] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[3].xy, shadowCoord.z))
-                    + fetchesWeights[4] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[4].xy, shadowCoord.z))
-                    + fetchesWeights[5] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[5].xy, shadowCoord.z))
-                    + fetchesWeights[6] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[6].xy, shadowCoord.z))
-                    + fetchesWeights[7] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[7].xy, shadowCoord.z))
-                    + fetchesWeights[8] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[8].xy, shadowCoord.z));
+            attenuation = fetchesWeights[0] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[0].xy, shadowCoord.z))
+                + fetchesWeights[1] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[1].xy, shadowCoord.z))
+                + fetchesWeights[2] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[2].xy, shadowCoord.z))
+                + fetchesWeights[3] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[3].xy, shadowCoord.z))
+                + fetchesWeights[4] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[4].xy, shadowCoord.z))
+                + fetchesWeights[5] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[5].xy, shadowCoord.z))
+                + fetchesWeights[6] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[6].xy, shadowCoord.z))
+                + fetchesWeights[7] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[7].xy, shadowCoord.z))
+                + fetchesWeights[8] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[8].xy, shadowCoord.z));
+        }
+        else // SOFT_SHADOW_QUALITY_HIGH
+        {
+            real fetchesWeights[16];
+            real2 fetchesUV[16];
+            SampleShadow_ComputeSamples_Tent_7x7(samplingData.shadowmapSize, shadowCoord.xy, fetchesWeights, fetchesUV);
+
+            attenuation = fetchesWeights[0] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[0].xy, shadowCoord.z))
+                + fetchesWeights[1] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[1].xy, shadowCoord.z))
+                + fetchesWeights[2] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[2].xy, shadowCoord.z))
+                + fetchesWeights[3] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[3].xy, shadowCoord.z))
+                + fetchesWeights[4] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[4].xy, shadowCoord.z))
+                + fetchesWeights[5] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[5].xy, shadowCoord.z))
+                + fetchesWeights[6] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[6].xy, shadowCoord.z))
+                + fetchesWeights[7] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[7].xy, shadowCoord.z))
+                + fetchesWeights[8] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[8].xy, shadowCoord.z))
+                + fetchesWeights[9] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[9].xy, shadowCoord.z))
+                + fetchesWeights[10] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[10].xy, shadowCoord.z))
+                + fetchesWeights[11] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[11].xy, shadowCoord.z))
+                + fetchesWeights[12] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[12].xy, shadowCoord.z))
+                + fetchesWeights[13] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[13].xy, shadowCoord.z))
+                + fetchesWeights[14] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[14].xy, shadowCoord.z))
+                + fetchesWeights[15] * SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, float3(fetchesUV[15].xy, shadowCoord.z));
+        }
     }
-    else // SOFT_SHADOW_QUALITY_HIGH
+    else if (samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_MEDIUM_5)
+    {
+        attenuation = 0;
+
+        half3 sample_shadow_coord;
+
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk5[0]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk5[1]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk5[2]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk5[3]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk5[4]);
+        attenuation *= 0.2f;
+    }
+    else if (samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_MEDIUM_6)
+    {
+        attenuation = 0;
+
+        half3 sample_shadow_coord;
+
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk6[0]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk6[1]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk6[2]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk6[3]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk6[4]);
+        attenuation += SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz + poisson_disk6[5]);
+        attenuation *= 0.1666667f;
+    }
+    else if (samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_MEDIUM)
+    {
+        attenuation = 10;
+    }
+    else // (samplingData.softShadowQuality == SOFT_SHADOW_QUALITY_HIGH)
     {
         real fetchesWeights[16];
         real2 fetchesUV[16];

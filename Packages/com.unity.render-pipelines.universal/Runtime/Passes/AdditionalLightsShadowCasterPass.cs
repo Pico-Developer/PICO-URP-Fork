@@ -15,6 +15,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         {
             public static int _AdditionalLightsWorldToShadow;
             public static int _AdditionalShadowParams;
+            public static int _AdditionalShadowMethod;
             public static int _AdditionalShadowOffset0;
             public static int _AdditionalShadowOffset1;
             public static int _AdditionalShadowFadeParams;
@@ -52,6 +53,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         /// w is perLightFirstShadowSliceIndex, used in Lighting shader to find if Additional light casts shadows.
         /// </summary>
         readonly static Vector4 c_DefaultShadowParams = new Vector4(0, 0, 0, -1);
+        readonly static int c_DefaultShadowMethod = 1;
 
         static int m_AdditionalLightsWorldToShadow_SSBO;
         static int m_AdditionalShadowParams_SSBO;
@@ -73,6 +75,8 @@ namespace UnityEngine.Rendering.Universal.Internal
         List<int> m_GlobalShadowSliceIndexToPerLightShadowSliceIndex = new List<int>(); // For each shadow slice, store its "per-light shadow slice index" in the punctual light that casts it (can be up to 5 for point lights)
 
         Vector4[] m_AdditionalLightIndexToShadowParams = null;                          // per-additional-light shadow info passed to the lighting shader (x: shadowStrength, y: softShadows, z: light type, w: perLightFirstShadowSliceIndex)
+        int[] m_AdditionalLightIndexToShadowMethod = null;
+
         Matrix4x4[] m_AdditionalLightShadowSliceIndexTo_WorldShadowMatrix = null;       // per-shadow-slice info passed to the lighting shader
 
         List<ShadowResolutionRequest> m_ShadowResolutionRequests = new List<ShadowResolutionRequest>();  // intermediate array used to compute the final resolution of each shadow slice rendered in the frame
@@ -99,7 +103,8 @@ namespace UnityEngine.Rendering.Universal.Internal
             renderPassEvent = evt;
 
             AdditionalShadowsConstantBuffer._AdditionalLightsWorldToShadow = Shader.PropertyToID("_AdditionalLightsWorldToShadow");
-            AdditionalShadowsConstantBuffer._AdditionalShadowParams = Shader.PropertyToID("_AdditionalShadowParams");
+            AdditionalShadowsConstantBuffer._AdditionalShadowParams = Shader.PropertyToID("_AdditionalShadowParams"); 
+            AdditionalShadowsConstantBuffer._AdditionalShadowMethod = Shader.PropertyToID("_AdditionalShadowMethod"); 
             AdditionalShadowsConstantBuffer._AdditionalShadowOffset0 = Shader.PropertyToID("_AdditionalShadowOffset0");
             AdditionalShadowsConstantBuffer._AdditionalShadowOffset1 = Shader.PropertyToID("_AdditionalShadowOffset1");
             AdditionalShadowsConstantBuffer._AdditionalShadowFadeParams = Shader.PropertyToID("_AdditionalShadowFadeParams");
@@ -124,6 +129,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             m_VisibleLightIndexToAdditionalLightIndex = new int[maxVisibleLights];
             m_VisibleLightIndexToSortedShadowResolutionRequestsFirstSliceIndex = new int[maxVisibleLights];
             m_AdditionalLightIndexToShadowParams = new Vector4[maxAdditionalLightShadowParams];
+            m_AdditionalLightIndexToShadowMethod = new int[maxAdditionalLightShadowParams];
             m_VisibleLightIndexToCameraSquareDistance = new float[maxVisibleLights];
 
             if (!m_UseStructuredBuffer)
@@ -552,6 +558,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             {
                 m_AdditionalLightIndexToVisibleLightIndex = new int[maxAdditionalLightShadowParams];
                 m_AdditionalLightIndexToShadowParams = new Vector4[maxAdditionalLightShadowParams];
+                m_AdditionalLightIndexToShadowMethod = new int[maxAdditionalLightShadowParams];
             }
 
             // reset m_VisibleLightIndexClosenessToCamera
@@ -642,7 +649,10 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             // initialize _AdditionalShadowParams
             for (int i = 0; i < maxAdditionalLightShadowParams; ++i)
+            {
                 m_AdditionalLightIndexToShadowParams[i] = c_DefaultShadowParams;
+                m_AdditionalLightIndexToShadowMethod[i] = c_DefaultShadowMethod;
+            }
 
             int validShadowCastingLightsCount = 0;
             bool supportsSoftShadows = renderingData.shadowData.supportsSoftShadows;
@@ -720,6 +730,12 @@ namespace UnityEngine.Rendering.Universal.Internal
                                     Vector4 shadowParams = new Vector4(shadowStrength, softShadows, LightTypeIdentifierInShadowParams_Spot, perLightFirstShadowSliceIndex);
                                     m_AdditionalLightShadowSliceIndexTo_WorldShadowMatrix[globalShadowSliceIndex] = shadowTransform;
                                     m_AdditionalLightIndexToShadowParams[additionalLightIndex] = shadowParams;
+                                    if(light.TryGetComponent(out UniversalAdditionalLightData additionalLightData))
+                                    {
+                                        m_AdditionalLightIndexToShadowMethod[additionalLightIndex] =
+                                            (additionalLightData.softShadowMethod == SoftShadowMethod.Original) ? 1 : 2;
+                                    }
+
                                     isValidShadowCastingLight = true;
                                 }
                             }
@@ -836,7 +852,10 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             // initialize _AdditionalShadowParams
             for (int i = 0; i < m_AdditionalLightIndexToShadowParams.Length; ++i)
+            {
+                m_AdditionalLightIndexToShadowMethod[i] = c_DefaultShadowMethod;
                 m_AdditionalLightIndexToShadowParams[i] = c_DefaultShadowParams;
+            }
 
             return true;
         }

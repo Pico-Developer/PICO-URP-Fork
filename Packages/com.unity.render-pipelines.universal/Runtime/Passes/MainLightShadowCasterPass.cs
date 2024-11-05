@@ -13,6 +13,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         {
             public static int _WorldToShadow;
             public static int _ShadowParams;
+            public static int _ShadowMethod;
             public static int _CascadeShadowSplitSpheres0;
             public static int _CascadeShadowSplitSpheres1;
             public static int _CascadeShadowSplitSpheres2;
@@ -60,6 +61,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             MainLightShadowConstantBuffer._WorldToShadow = Shader.PropertyToID("_MainLightWorldToShadow");
             MainLightShadowConstantBuffer._ShadowParams = Shader.PropertyToID("_MainLightShadowParams");
+            MainLightShadowConstantBuffer._ShadowMethod = Shader.PropertyToID("_MainLightShadowMethod");
             MainLightShadowConstantBuffer._CascadeShadowSplitSpheres0 = Shader.PropertyToID("_CascadeShadowSplitSpheres0");
             MainLightShadowConstantBuffer._CascadeShadowSplitSpheres1 = Shader.PropertyToID("_CascadeShadowSplitSpheres1");
             MainLightShadowConstantBuffer._CascadeShadowSplitSpheres2 = Shader.PropertyToID("_CascadeShadowSplitSpheres2");
@@ -202,6 +204,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             CoreUtils.SetKeyword(cmd, ShaderKeywordStrings.MainLightShadows, true);
             cmd.SetGlobalVector(MainLightShadowConstantBuffer._ShadowParams,
                 new Vector4(1, 0, 1, 0));
+            cmd.SetGlobalFloat(MainLightShadowConstantBuffer._ShadowMethod, 1.0f);
             cmd.SetGlobalVector(MainLightShadowConstantBuffer._ShadowmapSize,
                 new Vector4(1f / m_EmptyLightShadowmapTexture.rt.width, 1f / m_EmptyLightShadowmapTexture.rt.height, m_EmptyLightShadowmapTexture.rt.width, m_EmptyLightShadowmapTexture.rt.height));
             context.ExecuteCommandBuffer(cmd);
@@ -276,7 +279,8 @@ namespace UnityEngine.Rendering.Universal.Internal
             cmd.SetGlobalMatrixArray(MainLightShadowConstantBuffer._WorldToShadow, m_MainLightShadowMatrices);
             cmd.SetGlobalVector(MainLightShadowConstantBuffer._ShadowParams,
                 new Vector4(light.shadowStrength, softShadowsProp, shadowFadeScale, shadowFadeBias));
-
+            //TODO: Need to send proper method here************************JINWOO    
+            cmd.SetGlobalFloat(MainLightShadowConstantBuffer._ShadowMethod, 1);
             if (m_ShadowCasterCascadesCount > 1)
             {
                 cmd.SetGlobalVector(MainLightShadowConstantBuffer._CascadeShadowSplitSpheres0,

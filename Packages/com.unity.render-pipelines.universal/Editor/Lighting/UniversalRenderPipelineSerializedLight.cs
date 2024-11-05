@@ -21,6 +21,7 @@ namespace UnityEditor.Rendering.Universal
         public SerializedProperty useAdditionalDataProp { get; }                     // Does light use shadow bias settings defined in UniversalRP asset file?
         public SerializedProperty additionalLightsShadowResolutionTierProp { get; }  // Index of the AdditionalLights ShadowResolution Tier
         public SerializedProperty softShadowQualityProp { get; }                     // Per light soft shadow filtering quality.
+        public SerializedProperty softShadowMethodProp { get; }
         public SerializedProperty lightCookieSizeProp { get; }                       // Multi dimensional light cookie size replacing `cookieSize` in legacy light.
         public SerializedProperty lightCookieOffsetProp { get; }                     // Multi dimensional light cookie offset.
 
@@ -64,6 +65,7 @@ namespace UnityEditor.Rendering.Universal
             useAdditionalDataProp = serializedAdditionalDataObject.FindProperty("m_UsePipelineSettings");
             additionalLightsShadowResolutionTierProp = serializedAdditionalDataObject.FindProperty("m_AdditionalLightsShadowResolutionTier");
             softShadowQualityProp = serializedAdditionalDataObject.FindProperty("m_SoftShadowQuality");
+            softShadowMethodProp = serializedAdditionalDataObject.FindProperty("m_SoftShadowMethod");
             lightCookieSizeProp = serializedAdditionalDataObject.FindProperty("m_LightCookieSize");
             lightCookieOffsetProp = serializedAdditionalDataObject.FindProperty("m_LightCookieOffset");
 

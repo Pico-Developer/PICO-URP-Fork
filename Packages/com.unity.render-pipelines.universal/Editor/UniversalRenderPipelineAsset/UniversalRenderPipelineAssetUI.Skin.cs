@@ -88,10 +88,20 @@ namespace UnityEditor.Rendering.Universal
             public static GUIContent[] softShadowsQualityAssetOptions =
             {
                 EditorGUIUtility.TrTextContent(nameof(SoftShadowQuality.Low)),
+                EditorGUIUtility.TrTextContent("Medium Poisson Filter (5 samples)"),
+                EditorGUIUtility.TrTextContent("Medium Poisson Filter (6 samples)"),
                 EditorGUIUtility.TrTextContent(nameof(SoftShadowQuality.Medium)),
                 EditorGUIUtility.TrTextContent(nameof(SoftShadowQuality.High))
             };
-            public static int[] softShadowsQualityAssetValues =  { (int)SoftShadowQuality.Low, (int)SoftShadowQuality.Medium, (int)SoftShadowQuality.High };
+            public static int[] softShadowsQualityAssetValues =  { (int)SoftShadowQuality.Low, (int)SoftShadowQuality.Medium_Poisson5, (int)SoftShadowQuality.Medium_Poisson6, (int)SoftShadowQuality.Medium, (int)SoftShadowQuality.High };
+
+            public static GUIContent softShadowsMethod = EditorGUIUtility.TrTextContent("Method", "Soft shadow method setting for Lights.");
+            public static GUIContent[] softShadowsMethodAssetOptions =
+            {
+                EditorGUIUtility.TrTextContent(nameof(SoftShadowMethod.Original)),
+                EditorGUIUtility.TrTextContent(nameof(SoftShadowMethod.PoissonDisk))
+            };
+            public static int[] softShadowsMethodAssetValues = { (int)SoftShadowMethod.Original, (int)SoftShadowMethod.PoissonDisk };
 
             // Post-processing
             public static GUIContent colorGradingMode = EditorGUIUtility.TrTextContent("Grading Mode", "Defines how color grading will be applied. Operators will react differently depending on the mode.");

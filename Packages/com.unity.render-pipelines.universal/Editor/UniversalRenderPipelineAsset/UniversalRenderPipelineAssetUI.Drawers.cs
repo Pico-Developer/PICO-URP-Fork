@@ -363,7 +363,11 @@ namespace UnityEditor.Rendering.Universal
             if (serialized.softShadowsSupportedProp.boolValue)
             {
                 EditorGUI.indentLevel++;
+                DrawShadowsSoftShadowMethod(serialized, ownerEditor);
+                if (serialized.softShadowMethodProp.intValue == (int)SoftShadowMethod.Original)
+                {
                     DrawShadowsSoftShadowQuality(serialized, ownerEditor);
+                }
                 EditorGUI.indentLevel--;
             }
 
@@ -382,6 +386,24 @@ namespace UnityEditor.Rendering.Universal
                     if (checkScope.changed)
                     {
                         serialized.softShadowQualityProp.intValue = Math.Clamp(selectedAssetSoftShadowQuality, (int)SoftShadowQuality.Low, (int)SoftShadowQuality.High);
+                    }
+                }
+            }
+            EditorGUI.EndProperty();
+        }
+
+        static void DrawShadowsSoftShadowMethod(SerializedUniversalRenderPipelineAsset serialized, Editor ownerEditor)
+        {
+            int selectedAssetSoftShadowMethod = serialized.softShadowMethodProp.intValue;
+            Rect r = EditorGUILayout.GetControlRect(true);
+            EditorGUI.BeginProperty(r, Styles.softShadowsMethod, serialized.softShadowMethodProp);
+            {
+                using (var checkScope = new EditorGUI.ChangeCheckScope())
+                {
+                    selectedAssetSoftShadowMethod = EditorGUI.IntPopup(r, Styles.softShadowsMethod, selectedAssetSoftShadowMethod, Styles.softShadowsMethodAssetOptions, Styles.softShadowsMethodAssetValues);
+                    if (checkScope.changed)
+                    {
+                        serialized.softShadowMethodProp.intValue = Math.Clamp(selectedAssetSoftShadowMethod, (int)SoftShadowMethod.Original, (int)SoftShadowMethod.PoissonDisk);
                     }
                 }
             }

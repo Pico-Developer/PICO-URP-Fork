@@ -63,7 +63,13 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
         Back = 1,       // = CullMode.Front -- render back face only
         Both = 0        // = CullMode.Off -- render both faces
     }
-
+    //Jinwoo
+    public enum RenderFeature
+    {
+        Default = 0,
+        Multiview = 1,
+        Singlepass = 2
+    }
     sealed class BuiltInTarget : Target, IHasMetadata
     {
         public override int latestVersion => 2;
@@ -106,6 +112,10 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
 
         [SerializeField]
         RenderFace m_RenderFace = RenderFace.Front;
+
+        //Jinwoo
+        [SerializeField]
+        RenderFeature m_RenderFeature = RenderFeature.Default;
 
         [SerializeField]
         bool m_AlphaClip = false;
@@ -187,6 +197,13 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
         {
             get => m_RenderFace;
             set => m_RenderFace = value;
+        }
+
+        //Jinwoo
+        public RenderFeature renderFeature
+        {
+            get => m_RenderFeature;
+            set => m_RenderFeature = value;
         }
 
         public bool alphaClip
@@ -352,6 +369,17 @@ namespace UnityEditor.Rendering.BuiltIn.ShaderGraph
 
         public void GetDefaultSurfacePropertiesGUI(ref TargetPropertyGUIContext context, Action onChange, Action<String> registerUndo)
         {
+            //Jinwoo
+            context.AddProperty("Render Feature", new EnumField(RenderFeature.Default) { value = renderFeature }, (evt) =>
+            {
+                if (Equals(renderFeature, evt.newValue))
+                    return;
+
+                registerUndo("Change RenderFeature");
+                renderFeature = (RenderFeature)evt.newValue;
+                onChange();
+            });
+
             context.AddProperty("Surface Type", new EnumField(SurfaceType.Opaque) { value = surfaceType }, (evt) =>
             {
                 if (Equals(surfaceType, evt.newValue))
